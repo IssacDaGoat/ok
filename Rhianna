@@ -1,0 +1,320 @@
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+-- Color settings
+local targetLockColor = Color3.new(0, 1, 0) -- Green color for target lock
+local espColor = Color3.new(1, 0, 0) -- Red color for ESP
+
+-- Camera and mouse variables
+local Camera = game.Workspace.CurrentCamera
+
+-- Default FOV settings
+local defaultFOV = 70
+local minFOV = 20
+local maxFOV = 120
+local currentFOV = defaultFOV
+
+-- Function to handle toggling aim-lock
+local aimLockEnabled = false
+local targetPlayer = nil
+
+local function toggleAimLock()
+    aimLockEnabled = not aimLockEnabled
+    
+    if aimLockEnabled then
+        -- Find the closest player in front of the local player
+        local closestPlayer = nil
+        local closestDistance = math.huge
+        local localPlayerPosition = LocalPlayer.Character and LocalPlayer.Character.PrimaryPart.Position or Vector3.new(0, 0, 0)
+        local direction = Camera.CFrame.LookVector
+        
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                local character = player.Character
+                if character then
+                    local head = character:FindFirstChild("Head")
+                    if head then
+                        local distance = (head.Position - localPlayerPosition).magnitude
+                        local dotProduct = direction:Dot((head.Position - Camera.CFrame.Position).unit)
+                        
+                        if dotProduct > 0 and distance < closestDistance then
+                            closestPlayer = player
+                            closestDistance = distance
+                        end
+                    end
+                end
+            end
+        end
+        
+        if closestPlayer then
+            targetPlayer = closestPlayer
+        end
+    else
+        targetPlayer = nil
+    end
+end
+
+-- Function to create or update a target lock effect
+local targetLockAdornment = nil
+local function highlightTargetHead(character)
+    local head = character:FindFirstChild("Head")
+    if head then
+        if not targetLockAdornment then
+            targetLockAdornment = Instance.new("BoxHandleAdornment")
+            targetLockAdornment.Name = "TargetLock"
+            targetLockAdornment.Adornee = head
+            targetLockAdornment.Size = head.Size * 1.1 -- Adjust scale if needed
+            targetLockAdornment.ZIndex = 1
+            targetLockAdornment.AlwaysOnTop = true
+            targetLockAdornment.Color3 = targetLockColor
+            targetLockAdornment.Transparency = 0.5
+            targetLockAdornment.Parent = head
+        end
+    end
+end
+
+-- Function to remove target lock effect
+local function unhighlightTargetLock()
+    if targetLockAdornment then
+        targetLockAdornment:Destroy()
+        targetLockAdornment = nil
+    end
+end
+
+-- Function to handle aiming at the target player's head
+local function aimAtTargetHead()
+    if aimLockEnabled and targetPlayer and targetPlayer.Character then
+        local targetHead = targetPlayer.Character:FindFirstChild("Head")
+        if targetHead then
+            -- Aim the camera at the target's head
+            Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetHead.Position)
+        end
+    end
+end
+
+-- Function to update FOV based on slider value
+local function updateFOV(value)
+    currentFOV = math.clamp(value, minFOV, maxFOV)
+    Camera.FieldOfView = currentFOV
+end
+
+-- Function to handle toggling ESP (Entity/Player/Enemy/Entity) highlighting
+local function toggleESP()
+    -- Enable ESP: Highlight bones for all players
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local character = player.Character
+            if character then
+                -- Example: Highlight player with a transparent red box
+                local box = Instance.new("BoxHandleAdornment")
+                box.Name = "ESPBox"
+                box.Adornee = character
+                box.Size = character:GetExtentsSize() * 1.1
+                box.ZIndex = 1
+                box.AlwaysOnTop = true
+                box.Color3 = espColor
+                box.Transparency = 0.5
+                box.Parent = character
+            end
+        end
+    end
+end
+
+-- Function to handle when a player joins the game
+local function onPlayerAdded(player)
+    player.CharacterAdded:Connect(function(character)
+        toggleESP() -- Update ESP when a new player character is added
+    end)
+end
+
+-- Function to handle when a player leaves the game
+local function onPlayerRemoving(player)
+    -- Remove ESP for the leaving player if necessary
+    local character = player.Character
+    if character then
+        local espBox = character:FindFirstChild("ESPBox")
+        if espBox then
+            espBox:Destroy()
+        end
+    end
+    
+    -- If the player leaving is the current target player, clear aim-lock
+    if player == targetPlayer then
+        unhighlightTargetLock()
+        targetPlayer = nil
+    end
+end
+
+-- Connect events for player joining and leaving
+Players.PlayerAdded:Connect(onPlayerAdded)
+Players.PlayerRemoving:Connect(onPlayerRemoving)
+
+-- RunService render step to continuously aim at the target player's head when aim-lock is enabled
+RunService.RenderStepped:Connect(function()
+    aimAtTargetHead()
+end)
+
+-- Initial setup for FOV
+updateFOV(defaultFOV)
+
+-- Keybind handling
+UserInputService.InputBegan:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.E then
+        toggleAimLock()
+    elseif input.KeyCode == Enum.KeyCode.P then
+        toggleESP()
+    elseif input.KeyCode == Enum.KeyCode.V then
+        menuFrame.Visible = not menuFrame.Visible
+    end
+end)
+
+-- Create ImGui-style menu UI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
+
+local menuFrame = Instance.new("Frame")
+menuFrame.Size = UDim2.new(0, 300, 0, 200) -- Larger menu size to accommodate slider
+menuFrame.Position = UDim2.new(0.5, -150, 0.5, -100) -- Centered initially
+menuFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+menuFrame.BorderSizePixel = 2
+menuFrame.BorderColor3 = Color3.fromRGB(255, 255, 255)
+menuFrame.Active = true -- Enable mouse dragging
+menuFrame.Draggable = true -- Enable built-in draggable property
+menuFrame.Visible = true -- Start with menu visible
+menuFrame.Parent = ScreenGui
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Text = "I love rhianna"
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.Size = UDim2.new(1, 0, 0, 20)
+titleLabel.TextSize = 18
+titleLabel.BackgroundTransparency = 1
+titleLabel.Parent = menuFrame
+
+local toggleAimLockButton = Instance.new("TextButton")
+toggleAimLockButton.Text = "Aim-Lock (E)"
+toggleAimLockButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleAimLockButton.Size = UDim2.new(1, -20, 0, 30)
+toggleAimLockButton.Position = UDim2.new(0.5, -((1 - 0.2) * 0.5), 0, 110) -- Adjust positioning if needed
+toggleAimLockButton.AnchorPoint = Vector2.new(0.5, 0)
+toggleAimLockButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+toggleAimLockButton.BorderSizePixel = 0
+toggleAimLockButton.Parent = menuFrame
+toggleAimLockButton.MouseButton1Click:Connect(function()
+    toggleAimLock()
+end)
+
+local toggleESPButton = Instance.new("TextButton")
+toggleESPButton.Text = " ESP (P)"
+toggleESPButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleESPButton.Size = UDim2.new(1, -20, 0, 30)
+toggleESPButton.Position = UDim2.new(0.5, -((1 - 0.2) * 0.5), 0, 70)
+toggleESPButton.AnchorPoint = Vector2.new(0.5, 0)
+toggleESPButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+toggleESPButton.BorderSizePixel = 0
+toggleESPButton.Parent = menuFrame
+toggleESPButton.MouseButton1Click:Connect(function()
+    toggleESP()
+end)
+
+local fovSliderFrame = Instance.new("Frame")
+fovSliderFrame.Size = UDim2.new(1, -20, 0, 30)
+fovSliderFrame.Position = UDim2.new(0.5, -((1 - 0.2) * 0.5), 0, 150) -- Adjust positioning if needed
+fovSliderFrame.AnchorPoint = Vector2.new(0.5, 0)
+fovSliderFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+fovSliderFrame.BorderSizePixel = 0
+fovSliderFrame.Parent = menuFrame
+
+local fovSliderLabel = Instance.new("TextLabel")
+fovSliderLabel.Text = "FOV Adjust"
+fovSliderLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+fovSliderLabel.Size = UDim2.new(0.2, 0, 1, 0)
+fovSliderLabel.Position = UDim2.new(0, 0, 0, 0)
+fovSliderLabel.BackgroundTransparency = 1
+fovSliderLabel.Parent = fovSliderFrame
+
+local fovSlider = Instance.new("TextButton")
+fovSlider.Text = ""
+fovSlider.TextColor3 = Color3.fromRGB(255, 255, 255)
+fovSlider.Size = UDim2.new(0.8, 0, 1, 0)
+fovSlider.Position = UDim2.new(0.2, 0, 0, 0)
+fovSlider.AnchorPoint = Vector2.new(0, 0)
+fovSlider.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+fovSlider.BorderSizePixel = 0
+fovSlider.Parent = fovSliderFrame
+
+local fovValueLabel = Instance.new("TextLabel")
+fovValueLabel.Text = tostring(currentFOV)
+fovValueLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+fovValueLabel.Size = UDim2.new(0, 30, 1, 0)
+fovValueLabel.Position = UDim2.new(1, 5, 0, 0)
+fovValueLabel.AnchorPoint = Vector2.new(1, 0)
+fovValueLabel.BackgroundTransparency = 1
+fovValueLabel.Parent = fovSliderFrame
+
+-- Function to handle dragging for FOV slider
+local dragging = false
+fovSlider.MouseButton1Down:Connect(function()
+    dragging = true
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local mousePosition = input.Position.X
+        local sliderPosition = fovSlider.AbsolutePosition.X
+        local sliderSize = fovSlider.AbsoluteSize.X
+        local value = (mousePosition - sliderPosition) / sliderSize * (maxFOV - minFOV) + minFOV
+        updateFOV(value)
+        fovValueLabel.Text = tostring(math.floor(currentFOV))
+    end
+end)
+
+-- Function to handle when a player's character is added
+local function onCharacterAdded(character)
+    -- Optional: Add code here if needed
+end
+
+-- Function to handle when a player is added to the game
+local function onPlayerAdded(player)
+    player.CharacterAdded:Connect(onCharacterAdded)
+    toggleESP() -- Update ESP when a new player joins
+end
+
+-- Function to handle when a player leaves the game
+local function onPlayerRemoving(player)
+    -- Remove ESP for the leaving player if necessary
+    local character = player.Character
+    if character then
+        local espBox = character:FindFirstChild("ESPBox")
+        if espBox then
+            espBox:Destroy()
+        end
+    end
+    
+    -- If the player leaving is the current target player, clear aim-lock
+    if player == targetPlayer then
+        unhighlightTargetLock()
+        targetPlayer = nil
+    end
+end
+
+-- Connect events for player joining and leaving
+Players.PlayerAdded:Connect(onPlayerAdded)
+Players.PlayerRemoving:Connect(onPlayerRemoving)
+
+-- RunService render step to continuously aim at the target player's head when aim-lock is enabled
+RunService.RenderStepped:Connect(function()
+    aimAtTargetHead()
+end)
+
+-- Initial setup for FOV
+updateFOV(defaultFOV)
+fovValueLabel.Text = tostring(defaultFOV)
